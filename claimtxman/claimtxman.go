@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	ctmtypes "github.com/0xPolygonHermez/zkevm-bridge-service/claimtxman/types"
@@ -35,16 +36,17 @@ type ClaimTxManager struct {
 	cancel context.CancelFunc
 
 	// client is the ethereum client
-	l2Node          *utils.Client
-	l2NetworkID     uint
-	bridgeService   bridgeServiceInterface
-	cfg             Config
-	chExitRootEvent chan *etherman.GlobalExitRoot
-	chSynced        chan uint
-	storage         storageInterface
-	auth            *bind.TransactOpts
-	nonceCache      *lru.Cache[string, uint64]
-	synced          bool
+	l2Node            *utils.Client
+	l2NetworkID       uint
+	bridgeService     bridgeServiceInterface
+	cfg               Config
+	chExitRootEvent   chan *etherman.GlobalExitRoot
+	chSynced          chan uint
+	storage           storageInterface
+	auth              *bind.TransactOpts
+	nonceCache        *lru.Cache[string, uint64]
+	synced            bool
+	monitorTxsSyncing atomic.Value
 }
 
 // NewClaimTxManager creates a new claim transaction manager.
@@ -80,6 +82,7 @@ func NewClaimTxManager(cfg Config, chExitRootEvent chan *etherman.GlobalExitRoot
 // get mined
 func (tm *ClaimTxManager) Start() {
 	ticker := time.NewTicker(tm.cfg.FrequencyToMonitorTxs.Duration)
+	tm.monitorTxsSyncing.Store(false)
 	for {
 		select {
 		case <-tm.ctx.Done():
@@ -102,9 +105,15 @@ func (tm *ClaimTxManager) Start() {
 				log.Infof("Waiting for networkID %d to be synced before processing deposits", tm.l2NetworkID)
 			}
 		case <-ticker.C:
-			err := tm.monitorTxs(tm.ctx)
-			if err != nil {
-				log.Errorf("failed to monitor txs: %v", err)
+			if !tm.monitorTxsSyncing.Load().(bool) {
+				tm.monitorTxsSyncing.Store(true)
+				go func() {
+					err := tm.monitorTxs(tm.ctx)
+					if err != nil {
+						log.Errorf("failed to monitor txs: %v", err)
+					}
+					tm.monitorTxsSyncing.Store(false)
+				}()
 			}
 		}
 	}
