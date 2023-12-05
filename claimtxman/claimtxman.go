@@ -401,6 +401,15 @@ func (tm *ClaimTxManager) monitorTxs(ctx context.Context) error {
 			mTx.GasPrice = big.NewInt(0).Mul(gasPrice, big.NewInt(10)) //nolint:gomnd
 			log.Infof("Using gasPrice: %s. The gasPrice suggested by the network is %s", mTx.GasPrice.String(), gasPrice.String())
 
+			// try to fix nonce
+			tm.nonceCache.Remove(mTx.From.Hex())
+			nonce, err := tm.getNextNonce(mTx.From)
+			if err != nil {
+				mTxLog.Errorf("failed to get nonce. Error: %v", err)
+				continue
+			}
+			mTx.Nonce = nonce
+
 			// rebuild transaction
 			tx := mTx.Tx()
 			mTxLog.Debugf("unsigned tx created for monitored tx")
