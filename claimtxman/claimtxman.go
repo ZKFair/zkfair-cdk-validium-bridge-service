@@ -401,14 +401,11 @@ func (tm *ClaimTxManager) monitorTxs(ctx context.Context) error {
 			}
 
 			// GasPrice is set here to use always the proper and most accurate value right before sending it to L2
-			gasPrice, err := tm.l2Node.SuggestGasPrice(ctx)
+			mTx.GasPrice, err = tm.l2Node.SuggestGasPrice(ctx)
 			if err != nil {
 				mTxLog.Errorf("failed to get suggested gasPrice. Error: %v", err)
 				continue
 			}
-			//Multiply gasPrice by 2 to increase the efficiency of the tx in the sequence
-			mTx.GasPrice = big.NewInt(0).Mul(gasPrice, big.NewInt(2)) //nolint:gomnd
-			log.Infof("Using gasPrice: %s. The gasPrice suggested by the network is %s", mTx.GasPrice.String(), gasPrice.String())
 
 			// try to fix nonce
 			nonce, err := tm.l2Node.NonceAt(tm.ctx, mTx.From, nil)
